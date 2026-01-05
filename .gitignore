@@ -4,4 +4,4 @@ backend/buffers
 backend/media
 old/
 
-frontend/src/assets/thumbnails/*.png
+backend/thumbnails

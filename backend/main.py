@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 path = Path("buffers")
 
@@ -26,6 +27,19 @@ for message in messages:
 
 app = FastAPI()
 
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.get("/next")
 def get_next():
     if len(validation_queue) > 0:
@@ -45,6 +59,15 @@ def get_next():
 @app.get("/media/{file_name}")
 def get_next(file_name: str):
     file_path = Path("media") / file_name
+
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(file_path)
+    
+    raise HTTPException(status_code=404, detail="No media found!")
+
+@app.get("/thumbnail/{file_name}")
+def get_next(file_name: str):
+    file_path = Path("thumbnails") / file_name
 
     if file_path.exists() and file_path.is_file():
         return FileResponse(file_path)
