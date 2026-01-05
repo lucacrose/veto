@@ -1,5 +1,7 @@
 *.pyc
 
-buffers/
-media/
+backend/buffers
+backend/media
 old/
+
+frontend/src/assets/thumbnails/*.png
