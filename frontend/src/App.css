@@ -1,159 +1,230 @@
-/* Reset body to prevent accidental scrolling */
-body, html {
+/* Color Palette & Variables */
+:root {
+  --bg-color: #313338;
+  --bg-header: #2b2d31;
+  --msg-hover: #2e3035;
+  --text-main: #dbdee1;
+  --text-muted: #949ba4;
+  --timestamp: #a0a5ac;
+  --passed-green: #23a55a;
+  --discord-blurple: #5865f2;
+  --scrollbar-width: 12px;
+}
+
+/* Global Reset */
+body, html, #root {
   margin: 0;
   padding: 0;
-  overflow: hidden; 
-  background-color: #0f0f0f;
-  color: white;
-  font-family: sans-serif;
-}
-
-.container {
-  display: flex;
-  flex-direction: row;
-  height: 100vh; /* Fill entire window height */
-  width: 100vw;  /* Fill entire window width */
-  box-sizing: border-box;
-  padding: 20px;
-  gap: 20px;
-  transition: opacity 0.2s ease;
-}
-
-/* Image Section: Takes up the remaining 2/3 of space */
-.media-section {
-  flex: 2; /* Ratio: 2 parts image, 1 part UI (3 parts total) */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-width: 0; /* Allows the container to shrink smaller than the image */
-}
-
-.main-image {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain; /* Keeps aspect ratio while fitting the gap */
-  border-radius: 8px;
-  box-shadow: 0 0 20px rgba(0,0,0,0.8);
-}
-
-/* UI Section: Takes up exactly 1/3 of the screen */
-.data-section {
-  flex: 1; /* 1/3 of the total flex-grow */
-  min-width: 350px; /* Prevents UI from becoming too skinny on small screens */
-  background: #181818;
-  border-radius: 12px;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid #333;
-  overflow-y: auto; /* Scroll individual UI if it's too long */
-}
-
-/* Grid for the 4x2 boxes */
-.item-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-
-.item-box {
-  background: #252525;
-  border: 1px solid #383838;
-  border-radius: 6px;
-  overflow: hidden; /* Clips the image to the border radius */
-  display: flex;
-  flex-direction: column;
-  aspect-ratio: 1 / 1.2; /* Slightly taller to accommodate text below */
-}
-
-.item-image-container {
-  flex: 1; /* Takes up most of the box */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #111; /* Dark background for the photo */
-  padding: 5px;
-}
-
-.item-photo {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.item-details {
-  padding: 4px;
-  background: #1a1a1a;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  border-top: 1px solid #333;
-}
-
-.item-name {
-  font-size: 0.65rem;
-  font-weight: bold;
-  color: #efefef;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis; /* Prevents long names from breaking the box */
+  height: 100%;
   width: 100%;
+  background-color: var(--bg-color);
+  font-family: 'gg sans', 'Helvetica Neue', Arial, sans-serif;
+  color: var(--text-main);
+  overflow: hidden; /* Prevents double scrollbars */
 }
 
-.robux-line {
-  background: rgba(0, 255, 0, 0.1);
-  color: #00ff00;
-  padding: 8px;
-  text-align: center;
-  border-radius: 4px;
-  font-weight: bold;
-}
-
-.next-btn {
-  padding: 15px;
-  background: #646cff;
-  font-weight: bold;
-}
-
-.button-group {
+/* Main Layout Container */
+.app-container {
   display: flex;
-  gap: 20px;
-  margin-top: auto;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
 }
 
-.btn {
-  flex: 1;
-  padding: 20px;
-  font-size: 1.2rem;
-  font-weight: bold;
+/* Top Navigation / Filter Bar */
+.filter-bar {
+  height: 48px;
+  background-color: var(--bg-header);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 8px;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.2);
+  z-index: 10;
+  flex-shrink: 0; /* Prevents header from squishing */
+}
+
+.filter-label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+
+.filter-btn {
+  background: #4e5058;
   border: none;
-  border-radius: 8px;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
   cursor: pointer;
-  transition: transform 0.1s;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: background 0.15s ease;
 }
 
-.btn:active {
-  transform: scale(0.95);
+.filter-btn.active {
+  background: var(--discord-blurple);
 }
 
-.accept {
-  background-color: #2ecc71;
+.filter-btn:hover:not(.active) {
+  background: #6d6f78;
+}
+
+/* Messages Scrollable List */
+.messages-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Message Item Styling */
+.message-item {
+  padding: 4px 16px;
+  border-left: 2px solid transparent;
+  box-sizing: border-box;
+  width: 100%;
+  transition: background-color 0.05s ease;
+}
+
+.message-item:hover {
+  background-color: var(--msg-hover);
+}
+
+/* "Passed" Boolean Highlight */
+.message-item.passed {
+  border-left-color: var(--passed-green);
+  background-color: rgba(35, 165, 90, 0.04);
+}
+
+.message-item.passed:hover {
+  background-color: rgba(35, 165, 90, 0.08);
+}
+
+/* Header within each Message */
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.author {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #ffffff;
+}
+
+.timestamp {
+  font-size: 0.7rem;
+  color: var(--timestamp);
+}
+
+.passed-badge {
+  font-size: 0.6rem;
+  font-weight: 800;
+  color: var(--passed-green);
+  background: rgba(35, 165, 90, 0.15);
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: 0.4px;
+}
+
+/* Text Content */
+.message-content {
+  line-height: 1.25rem;
+  font-size: 0.9375rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--text-main);
+}
+
+/* Media Attachments */
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.msg-img {
+  max-width: 450px;
+  max-height: 300px;
+  width: auto;
+  height: auto;
+  border-radius: 4px;
+  border: 1px solid #232428;
+  object-fit: contain;
+  background-color: #2b2d31;
+}
+
+/* Infinite Scroll Sentinel / Trigger */
+.fetch-trigger {
+  height: 50px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Top of History Styling */
+.history-end {
+  padding: 40px 16px;
+  flex-shrink: 0;
+}
+
+.hashtag-icon {
+  width: 40px;
+  height: 40px;
+  background: #41434a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
   color: white;
+  margin-bottom: 12px;
 }
 
-.decline {
-  background-color: #e74c3c;
-  color: white;
+.divider {
+  border: 0;
+  border-top: 1px solid #41434a;
+  margin-top: 20px;
 }
 
-/* Dim the whole UI slightly while fetching the next item */
-.container.processing {
-  opacity: 0.7;
-  pointer-events: none; /* Disables all mouse clicks automatically */
+/* Loading Spinner */
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.1);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
-.btn:disabled {
-  background-color: #444 !important;
-  cursor: not-allowed;
-  transform: none !important;
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Custom Scrollbar (WebKit) */
+.messages-wrapper::-webkit-scrollbar {
+  width: var(--scrollbar-width);
+}
+
+.messages-wrapper::-webkit-scrollbar-track {
+  background-color: #2b2d31;
+}
+
+.messages-wrapper::-webkit-scrollbar-thumb {
+  background-color: #1a1b1e;
+  border-radius: 20px;
+  border: 3px solid #2b2d31; /* Creates the "padding" around the thumb */
+}
+
+.messages-wrapper::-webkit-scrollbar-thumb:hover {
+  background-color: #111214;
 }
