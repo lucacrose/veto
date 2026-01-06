@@ -1,7 +1,7 @@
 import proofreader
 import json
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -23,7 +23,11 @@ for message in messages:
 
         if file_path.exists() and file_path.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
             message[2] = message[2][0]
-            validation_queue.append(message)
+
+            tag = Path("tags") / f"{message[2]}.json"
+
+            if not tag.exists():
+                validation_queue.append(message)
 
 app = FastAPI()
 
@@ -73,3 +77,18 @@ def get_next(file_name: str):
         return FileResponse(file_path)
     
     raise HTTPException(status_code=404, detail="No media found!")
+
+@app.post("/tag/{file_name}")
+def get_next(file_name: str, data: dict = Body(...)):
+    tags_dir = Path("tags")
+
+    tags_dir.mkdir(parents=True, exist_ok=True)
+
+    file_path = tags_dir / f"{file_name}.json"
+
+    try:
+        with open(file_path, "w") as f:
+            f.write(json.dumps(data, separators=(',', ':')))
+        return {"message": "Tag saved successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

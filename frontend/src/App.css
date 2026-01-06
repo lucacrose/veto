@@ -16,6 +16,7 @@ body, html {
   box-sizing: border-box;
   padding: 20px;
   gap: 20px;
+  transition: opacity 0.2s ease;
 }
 
 /* Image Section: Takes up the remaining 2/3 of space */
@@ -145,7 +146,14 @@ body, html {
   color: white;
 }
 
+/* Dim the whole UI slightly while fetching the next item */
+.container.processing {
+  opacity: 0.7;
+  pointer-events: none; /* Disables all mouse clicks automatically */
+}
+
 .btn:disabled {
-  background-color: #555;
+  background-color: #444 !important;
   cursor: not-allowed;
+  transform: none !important;
 }

@@ -5,6 +5,7 @@ function App() {
   const [currentData, setCurrentData] = useState(null);
   const [nextData, setNextData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false); // The "Lock"
 
   const getSingleItem = async () => {
     try {
@@ -14,47 +15,65 @@ function App() {
     } catch (err) { return null; }
   };
 
-  // Logic to handle the decision and advance
   const handleDecision = useCallback(async (choice) => {
-    if (!currentData) return;
+    if (isProcessing || !currentData) return;
 
-    console.log(`Decision for ${currentData.message[0]}: ${choice}`);
+    setIsProcessing(true); // Lock inputs
+    
+    // Get the filename from the current data
+    const fileName = currentData.message[2];
 
-    // Optional: Send the decision to your backend
-    /*
-    fetch('http://localhost:8000/decide', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: currentData.message[1], decision: choice })
-    });
-    */
+    try {
+      // 1. Send the POST request to your API
+      const response = await fetch(`http://localhost:8000/tag/${fileName}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(currentData.data),
+      });
 
-    // Advance to preloaded data
-    if (nextData) {
-      setCurrentData(nextData);
-      setNextData(null);
-      // Refill the buffer
-      const backup = await getSingleItem();
-      setNextData(backup);
-    } else {
-      setCurrentData(null);
+      if (!response.ok) {
+        throw new Error('Failed to save decision to the server');
+      }
+
+      console.log(`Decision "${choice}" saved for ${fileName}`);
+
+      // 2. Move to next item and refill buffer
+      if (nextData) {
+        setCurrentData(nextData);
+        setNextData(null);
+        const backup = await getSingleItem();
+        setNextData(backup);
+      } else {
+        const fresh = await getSingleItem();
+        setCurrentData(fresh);
+        const backup = await getSingleItem();
+        setNextData(backup);
+      }
+    } catch (err) {
+      console.error("API Error:", err);
+      alert("Error saving decision. Please check backend connection.");
+    } finally {
+      setIsProcessing(false); // Unlock
     }
-  }, [currentData, nextData]);
+  }, [currentData, nextData, isProcessing]);
 
-  // Keybind Listener
+  // Keybinds with Lock Check
   useEffect(() => {
     const handleKeyDown = (event) => {
-      if (event.key.toLowerCase() === 'a') {
-        handleDecision('accept');
-      } else if (event.key.toLowerCase() === 'd') {
-        handleDecision('decline');
-      }
+      if (isProcessing) return; // Ignore keys if processing
+      
+      const key = event.key.toLowerCase();
+      if (key === 'a') handleDecision('accept');
+      if (key === 'd') handleDecision('decline');
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleDecision]);
+  }, [handleDecision, isProcessing]);
 
+  // Initial Load
   useEffect(() => {
     const init = async () => {
       const first = await getSingleItem();
@@ -66,11 +85,11 @@ function App() {
     init();
   }, []);
 
-  if (loading) return <div className="loading">Loading...</div>;
-  if (!currentData) return <div className="loading">Queue Empty.</div>;
+  if (loading) return <div className="loading">Connecting...</div>;
+  if (!currentData) return <div className="loading">All trades processed!</div>;
 
   return (
-    <div className="container">
+    <div className={`container ${isProcessing ? 'processing' : ''}`}>
       <div className="media-section">
         <img 
           src={`http://localhost:8000/media/${currentData.message[2]}`} 
@@ -80,23 +99,31 @@ function App() {
       </div>
 
       <div className="data-section">
-        <div className="trade-content">
+        <div className="trade-panel">
           <TradeSide title="Outgoing" sideData={currentData.data.outgoing} />
-          <hr style={{ border: '0.5px solid #333', margin: '20px 0' }} />
+          <hr className="divider" />
           <TradeSide title="Incoming" sideData={currentData.data.incoming} />
         </div>
 
-        {/* Button group at the bottom of the sidebar */}
-        <div className="button-group" style={{ marginTop: 'auto', paddingTop: '20px' }}>
-          <button className="btn accept" onClick={() => handleDecision('accept')}>
-            Accept (A)
+        <div className="button-group">
+          <button 
+            className="btn accept" 
+            onClick={() => handleDecision('accept')}
+            disabled={isProcessing}
+          >
+            {isProcessing ? "..." : "Accept (A)"}
           </button>
-          <button className="btn decline" onClick={() => handleDecision('decline')}>
-            Decline (D)
+          <button 
+            className="btn decline" 
+            onClick={() => handleDecision('decline')}
+            disabled={isProcessing}
+          >
+            {isProcessing ? "..." : "Decline (D)"}
           </button>
         </div>
       </div>
 
+      {/* Background Preload Tag */}
       {nextData && (
         <img src={`http://localhost:8000/media/${nextData.message[2]}`} style={{ display: 'none' }} />
       )}
