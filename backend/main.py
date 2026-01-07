@@ -1,6 +1,9 @@
 import proofreader
 import json
 import bisect
+import re
+from datetime import datetime
+from dateutil import parser
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import FileResponse
@@ -44,6 +47,53 @@ def find_before_index(target: float):
     keys = [m[1] for m in messages]
     return bisect.bisect_left(keys, target)
 
+def find_equal_index(target: float):
+    keys = [m[1] for m in messages]
+    i = bisect.bisect_left(keys, target)
+    if i != len(keys) and keys[i] == target:
+        return i
+    return -1
+
+def parse_date(text, epoch_context):
+    context_date = datetime.fromtimestamp(epoch_context)
+
+    if context_date is None:
+        context_date = datetime.now()
+    
+    match = re.search(r'(?:d|date)\s*[:\-]\s*(.*)', text, re.IGNORECASE)
+    if not match:
+        return None
+    
+    raw_val = match.group(1).split('\n')[0].lower().strip()
+
+    if 'today' in raw_val:
+        return context_date.date()
+    
+    normalized = re.sub(r'[–—\.]', '/', raw_val)
+
+    normalized = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', normalized)
+
+    normalized = re.sub(r'\(.*?\)', '', normalized).strip()
+
+    possibilities = []
+    
+    try:
+        possibilities.append(parser.parse(normalized, dayfirst=True, yearfirst=False))
+    except (ValueError, OverflowError):
+        pass
+        
+    try:
+        possibilities.append(parser.parse(normalized, dayfirst=False, yearfirst=False))
+    except (ValueError, OverflowError):
+        pass
+
+    if not possibilities:
+        return None
+    
+    best_match = min(possibilities, key=lambda d: abs((d - context_date).total_seconds()))
+    
+    return best_match.date()
+
 @app.get("/messages")
 def get_next(before: float = 2000000000, limit: int = 10, passed: str = "none"):
     index = find_before_index(before)
@@ -74,6 +124,30 @@ def get_next(file_name: str):
 
     if file_path.exists() and file_path.is_file():
         return FileResponse(file_path)
+    
+    raise HTTPException(status_code=404, detail="No media found!")
+
+@app.get("/autofill/{timestamp}")   
+def get_next(timestamp: float):
+    index = find_equal_index(timestamp)
+
+    print(index, timestamp)
+
+    if index > -1:
+        print(index)
+        message = messages[index]
+
+        file_path = Path("media") / message[2][0]
+
+        if file_path.exists() and file_path.is_file():
+            data = proofreader.get_trade_data(str(file_path))
+
+            date = parse_date(message[0], message[1])
+
+            return {
+                "trade": data,
+                "date": date
+            }
     
     raise HTTPException(status_code=404, detail="No media found!")
 
