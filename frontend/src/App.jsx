@@ -1,234 +1,187 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 
-const API_BASE = 'http://localhost:8000';
+const API_URL = 'http://localhost:8000';
 
 function App() {
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [filter, setFilter] = useState('none');
-  const [parsingId, setParsingId] = useState(null);
+  const [currentTrade, setCurrentTrade] = useState(null);
+  const [buffer, setBuffer] = useState([]);
+  const [stats, setStats] = useState({ accepted: 0, rejected: 0, remaining: 0 });
   
-  // Analysis Focus State
-  const [activeTrade, setActiveTrade] = useState(null);
-  const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState(null);
-
-  const scrollContainerRef = useRef(null);
-  const topRef = useRef(null);
-  const isInitialLoad = useRef(true);
+  // The Mutex Lock: Prevents the "Infinite Request Loop"
   const isFetching = useRef(false);
 
-  const fetchMessages = useCallback(async (beforeTimestamp, isInitial = false) => {
-    if (isFetching.current || (!hasMore && !isInitial)) return;
-    
+  const syncStats = async () => {
+    try {
+      const res = await fetch(`${API_URL}/stats`);
+      const data = await res.json();
+      setStats(data);
+    } catch (e) {
+      console.error("Failed to fetch stats");
+    }
+  };
+
+  const refillBuffer = useCallback(async () => {
+    // Only fetch if we aren't already fetching and buffer isn't full
+    if (isFetching.current || buffer.length >= 3) return;
     isFetching.current = true;
-    setLoading(true);
 
     try {
-      let url = `${API_BASE}/messages?limit=50`;
-      if (beforeTimestamp) url += `&before=${beforeTimestamp}`;
-      if (filter !== 'none') url += `&passed=${filter}`;
-
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (!data || data.length === 0) {
-        setHasMore(false);
-      } else {
-        const container = scrollContainerRef.current;
-        const prevHeight = container.scrollHeight;
-        
-        setMessages((prev) => isInitial ? data : [...prev, ...data]);
-
-        if (!isInitial) {
-          requestAnimationFrame(() => {
-            if (container) container.scrollTop = container.scrollHeight - prevHeight;
-          });
-        }
+      // Exclude logic: Tell backend what we already have to avoid duplicates
+      const exclude = buffer.map(t => t.filename);
+      if (currentTrade) exclude.push(currentTrade.filename);
+      
+      const query = exclude.map(f => `exclude=${encodeURIComponent(f)}`).join('&');
+      const res = await fetch(`${API_URL}/next?${query}`);
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data) setBuffer(prev => [...prev, data]);
       }
     } catch (e) {
-      console.error("Fetch error:", e);
+      console.error("Buffer refill failed", e);
     } finally {
-      setLoading(false);
       isFetching.current = false;
     }
-  }, [filter, hasMore]);
+  }, [buffer, currentTrade]);
 
+  // Initial load and monitoring
   useEffect(() => {
-    isInitialLoad.current = true;
-    setHasMore(true);
-    setMessages([]);
-    fetchMessages(null, true);
-  }, [filter, fetchMessages]);
+    syncStats();
+    refillBuffer();
+  }, [refillBuffer]);
 
+  // Consumer: Pull from buffer when screen is empty
   useEffect(() => {
-    if (isInitialLoad.current && messages.length > 0) {
-      const container = scrollContainerRef.current;
-      if (container) {
-        container.scrollTop = container.scrollHeight;
-        isInitialLoad.current = false;
-      }
+    if (!currentTrade && buffer.length > 0) {
+      setCurrentTrade(buffer[0]);
+      setBuffer(prev => prev.slice(1));
     }
-  }, [messages]);
+  }, [currentTrade, buffer]);
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !isFetching.current && hasMore && messages.length >= 20) {
-          const oldestMessage = messages[messages.length - 1];
-          fetchMessages(oldestMessage[1]);
-        }
-      },
-      { threshold: 0.1, rootMargin: '200px' }
-    );
-    if (topRef.current) observer.observe(topRef.current);
-    return () => observer.disconnect();
-  }, [messages, hasMore, fetchMessages]);
+  const handleAction = async (action) => {
+    if (!currentTrade) return;
+    const target = currentTrade;
+    
+    // Optimistic UI: Clear immediately so next item pops in
+    setCurrentTrade(null);
 
-  // UI Actions
-  const handleAiParse = async (msg) => {
-    setParsingId(msg[1]);
-    setError(null);
     try {
-      const response = await fetch(`${API_BASE}/autofill/${msg[1]}`);
-      const data = await response.json();
-      setActiveTrade({ 
-        ...data, 
-        timestamp: msg[1],
-        imageUrl: msg[2]?.[0] ? `${API_BASE}/media/${msg[2][0]}` : null 
-      });
-    } catch (e) {
-      alert("Error parsing trade data.");
-    } finally {
-      setParsingId(null);
-    }
-  };
-
-  const handleConfirm = async () => {
-    setConfirming(true);
-    setError(null);
-    try {
-      const response = await fetch(`${API_BASE}/confirm`, {
+      await fetch(`${API_URL}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ timestamp: activeTrade.timestamp })
+        body: JSON.stringify({
+          filename: target.filename,
+          message_index: target.message_index,
+          action: action,
+          metadata: target.metadata
+        })
       });
-
-      if (response.ok) {
-        setActiveTrade(null); // Close on success
-      } else {
-        const errData = await response.json();
-        setError(errData.detail || "Server error: Confirmation failed.");
-      }
+      syncStats();
     } catch (e) {
-      setError("Network error: Could not connect to server.");
-    } finally {
-      setConfirming(false);
+      console.error("Action submission failed", e);
     }
   };
 
+  // Keyboard Listeners
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key.toLowerCase() === 'a') handleAction('accept');
+      if (e.key.toLowerCase() === 'd') handleAction('reject');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [currentTrade]);
+
+  if (!currentTrade && buffer.length === 0) {
+    return <div className="full-center"><h1>Scanning Trade Queue...</h1></div>;
+  }
+
   return (
-    <div className="app-container">
-      <div className="filter-bar">
-        <span className="filter-label">Filter:</span>
-        <button className={`filter-btn ${filter === 'none' ? 'active' : ''}`} onClick={() => setFilter('none')}>All</button>
-        <button className={`filter-btn ${filter === 'true' ? 'active' : ''}`} onClick={() => setFilter('true')}>Passed</button>
-        <button className={`filter-btn ${filter === 'false' ? 'active' : ''}`} onClick={() => setFilter('false')}>Not Passed</button>
-      </div>
+    <div className="app-shell">
+      <header className="status-bar">
+        <div className="stat-pill">Processed: <b>{stats.accepted + stats.rejected}</b></div>
+        <div className="stat-pill">Remaining: <b>{stats.remaining}</b></div>
+        <div className="spacer" />
+        <div className="controls-hint">
+          <span className="key">A</span> Accept 
+          <span className="key">D</span> Skip
+        </div>
+      </header>
 
-      <div className="main-content">
-        <div className={`messages-wrapper ${activeTrade ? 'blur' : ''}`} ref={scrollContainerRef}>
-          <div ref={topRef} className="fetch-trigger">
-            {loading && <div className="spinner" />}
-          </div>
+      <main className="content-split">
+        <section className="image-viewer">
+          {currentTrade && (
+            <img 
+              src={`${API_URL}/media/${currentTrade.filename}`} 
+              alt="Trade Proof" 
+            />
+          )}
+        </section>
 
-          {[...messages].reverse().map((msg) => (
-            <div key={msg[1]} className={`message-item ${msg[3] ? 'passed' : ''}`}>
-              <div className="message-header">
-                <span className="author">System</span>
-                <span className="timestamp">{new Date(msg[1] * 1000).toLocaleString()}</span>
-                <button className="ai-btn" disabled={parsingId === msg[1]} onClick={() => handleAiParse(msg)}>
-                  {parsingId === msg[1] ? '...' : 'AI Parse'}
-                </button>
-              </div>
-              <div className="message-content">{msg[0]}</div>
-              {msg[2]?.length > 0 && (
-                <div className="attachments">
-                  {msg[2].map(f => (
-                    <div key={f} className="attachment-item">
-                      <img src={`${API_BASE}/media/${f}`} className="msg-img" loading="lazy" alt="" />
-                    </div>
-                  ))}
-                </div>
+        <section className="data-inspector">
+          {currentTrade ? (
+            <TradeRender data={currentTrade.metadata} />
+          ) : (
+            <div className="loader">Preparing Metadata...</div>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+}
+
+const TradeRender = ({ data }) => {
+  const Side = ({ title, info }) => {
+    // Ensure exactly 4 slots are rendered
+    const items = info.items || [];
+    const slots = [...items, ...Array(Math.max(0, 4 - items.length)).fill(null)];
+
+    return (
+      <div className="trade-section">
+        <div className="section-header">
+          <h3>{title}</h3>
+        </div>
+        
+        <div className="item-grid-1x4">
+          {slots.map((item, i) => (
+            <div key={i} className={`item-slot ${!item ? 'empty' : ''}`}>
+              {item && (
+                <>
+                  <img 
+                    src={`${API_URL}/thumbnails/${item.id}.png`} 
+                    alt="" 
+                    onError={(e) => { e.target.src = 'https://tr.rbxcdn.com/42px-placeholder.png'; }} 
+                  />
+                  <div className="item-label">
+                    <span className="name">{item.name}</span>
+                    <span className="id">{item.id}</span>
+                  </div>
+                </>
               )}
             </div>
           ))}
         </div>
 
-        {activeTrade && (
-          <div className="analysis-overlay">
-            <div className="analysis-image-pane">
-              {activeTrade.imageUrl && <img src={activeTrade.imageUrl} alt="Source" />}
-            </div>
-
-            <div className="analysis-panel-pane">
-              <div className="sidebar-header">
-                <h3>Trade Analysis</h3>
-                <button className="close-btn" onClick={() => setActiveTrade(null)}>×</button>
-              </div>
-              <div className="sidebar-meta">
-                <span className="meta-label">Captured</span>
-                <span className="meta-date-value">{activeTrade.date}</span>
-              </div>
-              <div className="sidebar-scroll">
-                <div className="side-section">
-                  <span className="section-label">Giving</span>
-                  <div className="trade-item-row">
-                    {activeTrade.trade.outgoing.items.map(item => (
-                      <div key={item.id} className="trade-item-card">
-                        <div className="thumb-container">
-                          <img src={`${API_BASE}/thumbnail/${item.id}.png`} alt="" />
-                        </div>
-                        <div className="item-name-tag">{item.name}</div>
-                      </div>
-                    ))}
-                  </div>
-                  {activeTrade.trade.outgoing.robux_value > 0 && (
-                    <div className="side-robux-footer">R$ {activeTrade.trade.outgoing.robux_value.toLocaleString()}</div>
-                  )}
-                </div>
-                <div className="side-section">
-                  <span className="section-label">Receiving</span>
-                  <div className="trade-item-row">
-                    {activeTrade.trade.incoming.items.map(item => (
-                      <div key={item.id} className="trade-item-card">
-                        <div className="thumb-container">
-                          <img src={`${API_BASE}/thumbnail/${item.id}.png`} alt="" />
-                        </div>
-                        <div className="item-name-tag">{item.name}</div>
-                      </div>
-                    ))}
-                  </div>
-                  {activeTrade.trade.incoming.robux_value > 0 && (
-                    <div className="side-robux-footer">R$ {activeTrade.trade.incoming.robux_value.toLocaleString()}</div>
-                  )}
-                </div>
-              </div>
-              {error && <div className="error-banner">{error}</div>}
-              <div className="sidebar-actions">
-                <button className="accept-btn" disabled={confirming} onClick={handleConfirm}>
-                  {confirming ? "Processing..." : "Confirm Trade"}
-                </button>
-                <button className="deny-btn" onClick={() => setActiveTrade(null)}>Dismiss</button>
-              </div>
-            </div>
+        <div className={`robux-footer ${info.robux_value > 0 ? 'active' : 'inactive'}`}>
+          <div className="robux-content">
+            <span className="robux-icon">R$</span>
+            <span className="robux-amount">
+              {info.robux_value > 0 ? info.robux_value.toLocaleString() : '0'}
+            </span>
           </div>
-        )}
+        </div>
       </div>
+    );
+  };
+
+  return (
+    <div className="trade-stack">
+      <Side title="Items You Gave" info={data.outgoing} />
+      <div className="middle-divider"><span>RECEIVING</span></div>
+      <Side title="Items You Received" info={data.incoming} />
     </div>
   );
-}
+};
 
 export default App;
