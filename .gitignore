@@ -6,3 +6,6 @@ backend/tags
 
 backend/thumbnails
 backend/annotated
+
+venv
+*.html

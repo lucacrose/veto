@@ -31,18 +31,20 @@ print(len(files_to_process))
 paths = []
 times = []
 #(np.float64(0.13941979999981413), np.float64(0.233303030001116))
+#np.float64(0.034562549999463954), np.float64(0.067776705000324
+#(np.float64(0.036774549999790906), np.float64(0.0733961049989375))*!
 
 for file in files_to_process:
     paths.append(str(media / file.with_suffix("").name))
 
 if False:
-    for i in range(3):
+    for i in range(10):
         s = time.perf_counter()
         for path in paths:
             data = proofreader.get_trade_data(path)
         print(i, time.perf_counter()-s)
 
-    for i in range(10):
+    for i in range(50):
         for path in paths:
             s = time.perf_counter()
             data = proofreader.get_trade_data(path)
